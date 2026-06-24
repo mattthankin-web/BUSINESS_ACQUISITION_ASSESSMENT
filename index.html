@@ -1,0 +1,1180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Acquisition Tracker</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--primary:#1e3a5f;--accent:#2563eb;--success:#16a34a;--warning:#b45309;--danger:#dc2626;--bg:#f1f5f9;--card:#fff;--border:#e2e8f0;--text:#1e293b;--muted:#64748b;--sw:220px}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);display:flex;height:100vh;overflow:hidden}
+
+/* Sidebar */
+#sidebar{width:var(--sw);background:var(--primary);color:#fff;display:flex;flex-direction:column;flex-shrink:0}
+.logo{padding:20px 16px;border-bottom:1px solid rgba(255,255,255,.12)}
+.logo h1{font-size:13px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#fff}
+.logo p{font-size:11px;color:rgba(255,255,255,.45);margin-top:3px}
+#sidebar nav{padding:10px 0;flex:1}
+.nav-link{display:flex;align-items:center;gap:10px;padding:10px 16px;color:rgba(255,255,255,.65);text-decoration:none;font-size:13px;font-weight:500;cursor:pointer;transition:all .15s;border:none;background:none;width:100%;text-align:left}
+.nav-link:hover,.nav-link.active{background:rgba(255,255,255,.1);color:#fff}
+.nav-link .ni{font-size:15px;width:20px;text-align:center}
+.sidebar-footer{padding:14px 16px;border-top:1px solid rgba(255,255,255,.1);font-size:11px;color:rgba(255,255,255,.3)}
+
+/* Main */
+#main{flex:1;overflow-y:auto}
+.page{display:none;padding:28px 32px;max-width:1200px}
+.page.active{display:block}
+.page-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px}
+.page-header h2{font-size:21px;font-weight:700}
+.page-header .actions{display:flex;gap:8px;align-items:center}
+
+/* Stats */
+.stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin-bottom:22px}
+.stat-card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:16px 18px}
+.stat-card .lbl{font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.05em}
+.stat-card .val{font-size:26px;font-weight:700;color:var(--text);margin-top:4px;line-height:1}
+.stat-card .sub{font-size:11px;color:var(--muted);margin-top:3px}
+
+/* Pipeline */
+.pipeline-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:22px}
+.pipe-card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:14px;text-align:center}
+.pipe-card .stage-name{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;margin-bottom:6px}
+.pipe-card .count{font-size:28px;font-weight:700}
+
+/* Cards */
+.card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:20px}
+.card-title{font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:14px}
+
+/* Table */
+.tbl-wrap{background:var(--card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+table{width:100%;border-collapse:collapse;font-size:13px}
+thead th{background:#f8fafc;padding:9px 14px;text-align:left;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--border);white-space:nowrap}
+tbody tr{border-bottom:1px solid var(--border);cursor:pointer;transition:background .1s}
+tbody tr:last-child{border-bottom:none}
+tbody tr:hover{background:#f8fafc}
+tbody td{padding:11px 14px}
+.td-main{font-weight:600;color:var(--text)}
+.td-sub{font-size:11px;color:var(--muted);margin-top:2px}
+
+/* Badges */
+.badge{display:inline-block;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;white-space:nowrap}
+.stage-Initial-Review{background:#dbeafe;color:#1d4ed8}
+.stage-Due-Diligence{background:#f3e8ff;color:#7c3aed}
+.stage-Offer{background:#dcfce7;color:#15803d}
+.stage-On-Hold{background:#fef3c7;color:#92400e}
+.stage-Dead{background:#fee2e2;color:#991b1b}
+.stage-Acquired{background:#d1fae5;color:#065f46}
+.risk-High{background:#fee2e2;color:#991b1b}
+.risk-Medium{background:#fef3c7;color:#92400e}
+.risk-Low{background:#dcfce7;color:#15803d}
+
+/* Score pill */
+.score-pill{display:inline-flex;align-items:center;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:700}
+.score-pursue{background:#dcfce7;color:#15803d}
+.score-dig{background:#fef3c7;color:#92400e}
+.score-skip{background:#fee2e2;color:#991b1b}
+.score-na{background:#f1f5f9;color:#94a3b8;font-weight:500}
+
+/* Buttons */
+.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:6px;font-size:13px;font-weight:500;cursor:pointer;border:none;transition:all .15s;text-decoration:none;white-space:nowrap}
+.btn-primary{background:var(--accent);color:#fff}.btn-primary:hover{background:#1d4ed8}
+.btn-secondary{background:var(--card);color:var(--text);border:1px solid var(--border)}.btn-secondary:hover{background:#f8fafc}
+.btn-danger{background:#fee2e2;color:var(--danger)}.btn-danger:hover{background:#fecaca}
+.btn-success{background:#dcfce7;color:#15803d}.btn-success:hover{background:#bbf7d0}
+.btn-warning{background:#fef3c7;color:#92400e}.btn-warning:hover{background:#fde68a}
+.btn-sm{padding:5px 10px;font-size:12px}
+.btn-xs{padding:3px 8px;font-size:11px}
+
+/* Forms */
+.fg{margin-bottom:14px}
+.fg label{display:block;font-size:11px;font-weight:600;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em}
+.fc{width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;color:var(--text);background:#fff;transition:border .15s;font-family:inherit}
+.fc:focus{outline:none;border-color:var(--accent)}
+textarea.fc{resize:vertical;min-height:70px}
+select.fc{cursor:pointer}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 16px}
+.span-2{grid-column:span 2}
+.form-actions{display:flex;gap:8px;margin-top:16px}
+
+/* Sections in deal detail */
+.section{background:var(--card);border:1px solid var(--border);border-radius:8px;margin-bottom:14px;overflow:hidden}
+.section-hdr{padding:13px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;background:#fafbfc}
+.section-hdr h3{font-size:13px;font-weight:700;color:var(--text)}
+.section-body{padding:16px}
+
+/* Tabs */
+.tabs{display:flex;border-bottom:2px solid var(--border);margin-bottom:20px}
+.tab{padding:9px 16px;font-size:13px;font-weight:500;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .15s}
+.tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+.tab-content{display:none}.tab-content.active{display:block}
+
+/* Deal detail header */
+.deal-hdr{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:18px 20px;margin-bottom:16px}
+.deal-hdr-top{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px}
+.deal-hdr h2{font-size:20px;font-weight:700;color:var(--text)}
+.deal-hdr-meta{display:flex;gap:16px;flex-wrap:wrap;font-size:13px;color:var(--muted);margin-top:6px}
+.deal-hdr-meta span{display:flex;align-items:center;gap:4px}
+.deal-hdr-actions{display:flex;gap:8px;align-items:center;flex-shrink:0}
+
+/* Score display large */
+.score-big{text-align:center;padding:20px;border-radius:8px;margin-bottom:16px}
+.score-big .pct{font-size:52px;font-weight:800;line-height:1}
+.score-big .verdict{font-size:14px;font-weight:600;margin-top:4px}
+.score-big .caveat{font-size:11px;color:var(--muted);margin-top:4px}
+.score-big-pursue{background:#f0fdf4;color:#15803d}
+.score-big-dig{background:#fffbeb;color:#92400e}
+.score-big-skip{background:#fef2f2;color:#991b1b}
+.score-big-na{background:#f8fafc;color:#64748b}
+
+/* Pillar bars */
+.pillar-bar{margin-bottom:12px}
+.pillar-bar-hdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:5px}
+.pillar-bar-name{font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+.pillar-bar-pct{font-size:12px;font-weight:700}
+.progress{height:6px;background:var(--border);border-radius:3px;overflow:hidden}
+.progress-fill{height:100%;border-radius:3px;transition:width .4s}
+.fill-green{background:#16a34a}
+.fill-amber{background:#d97706}
+.fill-red{background:#dc2626}
+.fill-gray{background:#cbd5e1}
+
+/* Dimension rows */
+.dim-group{margin-bottom:6px}
+.dim-group-title{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;padding:8px 0 6px;border-bottom:2px solid var(--border);margin-bottom:4px}
+.dim-row{display:grid;grid-template-columns:1fr 56px 70px;align-items:start;gap:10px;padding:10px 0;border-bottom:1px solid #f1f5f9}
+.dim-row:last-child{border-bottom:none}
+.dim-name{font-size:13px;font-weight:500}
+.dim-wt{font-size:11px;color:var(--muted);text-align:center;padding-top:2px}
+.dim-score-col{display:flex;flex-direction:column;gap:4px}
+.score-sel{width:66px;padding:5px 4px;border:1px solid var(--border);border-radius:6px;font-size:13px;text-align:center;background:#fff}
+.dim-anchor{font-size:10px;color:var(--muted);font-style:italic;line-height:1.4;margin-top:4px}
+.dim-notes-input{width:100%;padding:4px 6px;border:1px solid var(--border);border-radius:4px;font-size:11px;resize:none;height:36px;font-family:inherit}
+
+/* Red flags */
+.rf-row{display:grid;grid-template-columns:64px 1fr 1fr auto;gap:10px;align-items:start;padding:10px 0;border-bottom:1px solid #f1f5f9;font-size:13px}
+.rf-row:last-child{border-bottom:none}
+
+/* Questions */
+.q-row{display:flex;gap:10px;align-items:flex-start;padding:9px 0;border-bottom:1px solid #f1f5f9}
+.q-row:last-child{border-bottom:none}
+.q-cb{margin-top:2px;width:15px;height:15px;flex-shrink:0;cursor:pointer}
+.q-text{flex:1;font-size:13px}
+.q-text.done{text-decoration:line-through;color:var(--muted)}
+.q-del{color:var(--muted);background:none;border:none;cursor:pointer;font-size:14px;flex-shrink:0;padding:0 2px}
+
+/* Valuation */
+.val-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+.val-card{border:1px solid var(--border);border-radius:8px;padding:14px}
+.val-card h4{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;margin-bottom:12px}
+.val-field{margin-bottom:10px}
+.val-field label{font-size:11px;color:var(--muted);display:block;margin-bottom:3px}
+.val-field input{width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:5px;font-size:13px;font-family:inherit}
+.val-field input:focus{outline:none;border-color:var(--accent)}
+.val-ev{font-size:16px;font-weight:700;color:var(--text);margin-top:10px;padding-top:10px;border-top:1px solid var(--border)}
+
+/* Notes */
+.note-item{padding:10px 0;border-bottom:1px solid #f1f5f9}
+.note-item:last-child{border-bottom:none}
+.note-meta{font-size:11px;color:var(--muted);margin-bottom:4px}
+.note-text{font-size:13px;white-space:pre-wrap}
+
+/* Financial table */
+.fin-tbl{width:100%;border-collapse:collapse;font-size:13px}
+.fin-tbl th,.fin-tbl td{padding:8px 10px;border:1px solid var(--border)}
+.fin-tbl th{background:#f8fafc;font-weight:600;font-size:11px;color:var(--muted);text-transform:uppercase;text-align:left}
+.fin-tbl td:first-child{font-weight:600;background:#fafbfc;font-size:12px}
+.fin-tbl input{width:100%;border:none;background:transparent;font-size:13px;text-align:right;padding:2px;font-family:inherit}
+.fin-tbl input:focus{outline:1px solid var(--accent);border-radius:3px}
+
+/* Settings weight table */
+.wt-pillar{margin-bottom:24px}
+.wt-pillar-title{font-size:13px;font-weight:700;color:var(--text);margin-bottom:8px;padding-bottom:8px;border-bottom:2px solid var(--border)}
+.wt-row{display:grid;grid-template-columns:1fr 120px 70px 70px;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid #f1f5f9;font-size:13px}
+.wt-row:last-child{border-bottom:none}
+.wt-hdr{display:grid;grid-template-columns:1fr 120px 70px 70px;gap:10px;padding:6px 0;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase}
+.wt-input{width:60px;padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:13px;text-align:center;font-family:inherit}
+
+/* Modal */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:100;align-items:center;justify-content:center}
+.modal-overlay.open{display:flex}
+.modal{background:#fff;border-radius:10px;width:520px;max-height:88vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.2)}
+.modal-lg{width:640px}
+.modal-hdr{padding:16px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:#fff;z-index:1}
+.modal-hdr h3{font-size:15px;font-weight:700}
+.modal-close{cursor:pointer;color:var(--muted);font-size:20px;background:none;border:none;line-height:1}
+.modal-body{padding:18px}
+.modal-footer{padding:14px 18px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px;position:sticky;bottom:0;background:#fff}
+
+/* Utilities */
+.spinner{display:inline-block;width:18px;height:18px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .6s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loading{display:flex;align-items:center;justify-content:center;padding:60px;gap:12px;color:var(--muted)}
+.empty{text-align:center;padding:50px 20px;color:var(--muted)}
+.empty .ei{font-size:40px;margin-bottom:10px}
+.empty h3{font-size:15px;font-weight:600;color:var(--text);margin-bottom:5px}
+.flex{display:flex}.gap-8{gap:8px}.items-center{align-items:center}.justify-between{justify-content:space-between}
+.mt-4{margin-top:4px}.mt-8{margin-top:8px}.mt-12{margin-top:12px}.mt-16{margin-top:16px}
+.text-muted{color:var(--muted)}.text-sm{font-size:12px}.text-xs{font-size:11px}
+.font-bold{font-weight:700}.w-full{width:100%}
+.back-link{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);cursor:pointer;margin-bottom:14px;background:none;border:none;padding:0}
+.back-link:hover{color:var(--text)}
+.divider{height:1px;background:var(--border);margin:14px 0}
+.info-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px 24px}
+.info-item .info-lbl{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px}
+.info-item .info-val{font-size:13px;color:var(--text)}
+.tag-input-wrap{position:relative}
+.filter-bar{display:flex;gap:8px;margin-bottom:16px;align-items:center;flex-wrap:wrap}
+.filter-btn{padding:5px 12px;border-radius:20px;font-size:12px;font-weight:500;cursor:pointer;border:1px solid var(--border);background:#fff;color:var(--muted);transition:all .15s}
+.filter-btn.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+</style>
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<div id="sidebar">
+  <div class="logo">
+    <h1>Acquisition Tracker</h1>
+    <p>Matt &amp; Lucy · Private</p>
+  </div>
+  <nav>
+    <button class="nav-link active" onclick="navigate('dashboard')"><span class="ni">📊</span>Dashboard</button>
+    <button class="nav-link" onclick="navigate('deals')"><span class="ni">📋</span>All Deals</button>
+    <button class="nav-link" onclick="navigate('settings')"><span class="ni">⚙️</span>Scoring Settings</button>
+  </nav>
+  <div class="sidebar-footer">Powered by Claude · Supabase</div>
+</div>
+
+<!-- MAIN -->
+<div id="main">
+
+  <!-- DASHBOARD -->
+  <div id="page-dashboard" class="page active">
+    <div class="page-header">
+      <h2>Pipeline Dashboard</h2>
+      <div class="actions">
+        <button class="btn btn-primary" onclick="openAddDeal()">+ New Deal</button>
+      </div>
+    </div>
+    <div id="dash-stats" class="stat-grid"></div>
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-title">Pipeline by Stage</div>
+      <div id="dash-pipeline" class="pipeline-grid"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Recent Deals</div>
+      <div id="dash-recent"></div>
+    </div>
+  </div>
+
+  <!-- DEALS LIST -->
+  <div id="page-deals" class="page">
+    <div class="page-header">
+      <h2>All Deals</h2>
+      <div class="actions">
+        <button class="btn btn-primary" onclick="openAddDeal()">+ New Deal</button>
+      </div>
+    </div>
+    <div class="filter-bar" id="stage-filters">
+      <span style="font-size:12px;color:var(--muted);font-weight:600">Stage:</span>
+      <button class="filter-btn active" onclick="setStageFilter(null,this)">All</button>
+      <button class="filter-btn" onclick="setStageFilter('Initial Review',this)">Initial Review</button>
+      <button class="filter-btn" onclick="setStageFilter('Due Diligence',this)">Due Diligence</button>
+      <button class="filter-btn" onclick="setStageFilter('Offer',this)">Offer</button>
+      <button class="filter-btn" onclick="setStageFilter('On Hold',this)">On Hold</button>
+      <button class="filter-btn" onclick="setStageFilter('Dead',this)">Dead</button>
+      <button class="filter-btn" onclick="setStageFilter('Acquired',this)">Acquired</button>
+    </div>
+    <div id="deals-table" class="tbl-wrap"></div>
+  </div>
+
+  <!-- DEAL DETAIL -->
+  <div id="page-deal" class="page">
+    <button class="back-link" onclick="navigate('deals')">← Back to Deals</button>
+    <div id="deal-hdr"></div>
+    <div class="tabs" id="deal-tabs">
+      <div class="tab active" onclick="switchTab('overview',this)">Overview</div>
+      <div class="tab" onclick="switchTab('assessment',this)">Assessment</div>
+      <div class="tab" onclick="switchTab('risk',this)">Risk &amp; Questions</div>
+      <div class="tab" onclick="switchTab('valuation',this)">Valuation</div>
+      <div class="tab" onclick="switchTab('notes',this)">Notes</div>
+    </div>
+    <div id="tab-overview" class="tab-content active"></div>
+    <div id="tab-assessment" class="tab-content"></div>
+    <div id="tab-risk" class="tab-content"></div>
+    <div id="tab-valuation" class="tab-content"></div>
+    <div id="tab-notes" class="tab-content"></div>
+  </div>
+
+  <!-- SETTINGS -->
+  <div id="page-settings" class="page">
+    <div class="page-header">
+      <h2>Scoring Settings</h2>
+      <div class="actions">
+        <button class="btn btn-secondary btn-sm" onclick="resetWeights()">Reset to Defaults</button>
+        <button class="btn btn-primary" onclick="saveWeights()">Save Weights</button>
+      </div>
+    </div>
+    <div class="card" style="margin-bottom:14px">
+      <p style="font-size:13px;color:var(--muted);line-height:1.6">
+        Adjust the weight multipliers for each scoring dimension to reflect your priorities. The Acquiring Minds defaults are shown — your custom weights override them in all score calculations. Blank scores are always excluded from the calculation (never defaulted to 3).
+        <br><br>
+        <strong>Decision thresholds:</strong> ≥72% = <span class="badge score-pill score-pursue">Pursue</span> &nbsp; 50–71% = <span class="badge score-pill score-dig">Dig Deeper</span> &nbsp; &lt;50% = <span class="badge score-pill score-skip">Skip</span>
+      </p>
+    </div>
+    <div id="settings-content"></div>
+  </div>
+
+</div><!-- /main -->
+
+<!-- MODAL: Add/Edit Deal -->
+<div class="modal-overlay" id="modal-deal">
+  <div class="modal modal-lg">
+    <div class="modal-hdr">
+      <h3 id="modal-deal-title">New Deal</h3>
+      <button class="modal-close" onclick="closeModal('modal-deal')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="fg span-2"><label>Business Name *</label><input class="fc" id="fd-name" placeholder="e.g. Acme Plumbing Services"></div>
+        <div class="fg"><label>Industry / Sector</label><input class="fc" id="fd-industry" placeholder="e.g. Commercial Plumbing"></div>
+        <div class="fg"><label>Location</label><input class="fc" id="fd-location" placeholder="e.g. Brisbane, QLD"></div>
+        <div class="fg"><label>Years Operating</label><input class="fc" id="fd-years" type="number" placeholder="e.g. 12"></div>
+        <div class="fg"><label>Stage</label>
+          <select class="fc" id="fd-stage">
+            <option>Initial Review</option><option>Due Diligence</option><option>Offer</option><option>On Hold</option><option>Dead</option><option>Acquired</option>
+          </select>
+        </div>
+        <div class="fg"><label>Asking Price ($)</label><input class="fc" id="fd-ask" type="number" placeholder="e.g. 2500000"></div>
+        <div class="fg"><label>Reported EBITDA ($)</label><input class="fc" id="fd-ebitda" type="number" placeholder="e.g. 450000"></div>
+        <div class="fg"><label>Normalised EBITDA ($)</label><input class="fc" id="fd-nebitda" type="number" placeholder="After add-backs"></div>
+        <div class="fg"><label>Revenue ($)</label><input class="fc" id="fd-rev" type="number" placeholder="e.g. 2100000"></div>
+        <div class="fg"><label>Deal Structure</label><input class="fc" id="fd-structure" placeholder="e.g. 80/10/10 SBA"></div>
+        <div class="fg"><label>Broker Name</label><input class="fc" id="fd-broker" placeholder="e.g. John Smith, Xyz Brokers"></div>
+        <div class="fg"><label>Broker Email</label><input class="fc" id="fd-bemail" type="email" placeholder="broker@example.com"></div>
+        <div class="fg span-2"><label>Business Model</label><textarea class="fc" id="fd-model" placeholder="2-3 sentence description of how the business operates and earns revenue"></textarea></div>
+        <div class="fg span-2"><label>Owner's Stated Reason for Sale</label><textarea class="fc" id="fd-reason" placeholder="Why is the owner selling?"></textarea></div>
+        <div class="fg span-2"><label>Source URL</label><input class="fc" id="fd-url" placeholder="https://"></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modal-deal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveDeal()">Save Deal</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Add Red Flag -->
+<div class="modal-overlay" id="modal-rf">
+  <div class="modal">
+    <div class="modal-hdr"><h3>Add Red Flag</h3><button class="modal-close" onclick="closeModal('modal-rf')">×</button></div>
+    <div class="modal-body">
+      <div class="fg"><label>Description *</label><textarea class="fc" id="rf-desc" placeholder="Describe the red flag"></textarea></div>
+      <div class="fg"><label>Risk Level *</label>
+        <select class="fc" id="rf-level"><option>High</option><option selected>Medium</option><option>Low</option></select>
+      </div>
+      <div class="fg"><label>Evidence Basis</label><textarea class="fc" id="rf-evidence" placeholder="What evidence supports this flag?"></textarea></div>
+      <div class="fg"><label>Recommended DD Action</label><textarea class="fc" id="rf-action" placeholder="What should be done to resolve or confirm this flag?"></textarea></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modal-rf')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveRedFlag()">Add Flag</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Add Question -->
+<div class="modal-overlay" id="modal-q">
+  <div class="modal">
+    <div class="modal-hdr"><h3>Add Key Question</h3><button class="modal-close" onclick="closeModal('modal-q')">×</button></div>
+    <div class="modal-body">
+      <div class="fg"><label>Question *</label><textarea class="fc" id="q-text" placeholder="What do you need to know from the vendor/broker?"></textarea></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modal-q')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveQuestion()">Add Question</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Move to DD -->
+<div class="modal-overlay" id="modal-dd">
+  <div class="modal">
+    <div class="modal-hdr"><h3>Move to Due Diligence</h3><button class="modal-close" onclick="closeModal('modal-dd')">×</button></div>
+    <div class="modal-body">
+      <p style="font-size:13px;line-height:1.6;color:var(--text)">You're moving <strong id="dd-deal-name"></strong> to Due Diligence.</p>
+      <div style="background:#f8fafc;border:1px solid var(--border);border-radius:8px;padding:14px;margin-top:14px;font-size:12px;color:var(--muted);line-height:1.7">
+        The following data will be carried forward to DD:<br>
+        ✓ Full deal record (financials, structure, ask price)<br>
+        ✓ Acquiring Minds scores &amp; notes<br>
+        ✓ Red flag register<br>
+        ✓ Key questions<br>
+        ✓ Valuation scenarios<br>
+        ✓ All notes<br><br>
+        The stage will be updated and the DD date recorded. A full DD checklist framework will be produced in a separate workflow.
+      </div>
+      <div class="fg mt-12"><label>Notes for DD handover</label><textarea class="fc" id="dd-notes" placeholder="Any handover notes or context for DD phase..."></textarea></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modal-dd')">Cancel</button>
+      <button class="btn btn-success" onclick="confirmMoveToDd()">Confirm Move to DD</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ─── CONFIG ──────────────────────────────────────────────────────────────────
+const SUPABASE_URL = 'https://tnehoohmgjikmgeozosc.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRuZWhvb2htZ2ppa21nZW96b3NjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIyOTIxODIsImV4cCI6MjA5Nzg2ODE4Mn0.st76X1HurgWm_IbyDc4qxEKmQlQMwWR1w6ZuRcPsdYU';
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// ─── STATE ───────────────────────────────────────────────────────────────────
+let state = {
+  currentDealId: null,
+  stageFilter: null,
+  weights: [],
+  deal: null,
+  dealScores: [],
+  editingDealId: null
+};
+
+// ─── HELPERS ─────────────────────────────────────────────────────────────────
+const fmt$ = n => n == null ? '—' : '$' + Number(n).toLocaleString('en-AU',{maximumFractionDigits:0});
+const fmtM = n => n == null ? '—' : '$' + (Number(n)/1e6).toFixed(2) + 'M';
+const fmtPct = n => n == null ? '—' : Number(n).toFixed(1) + '%';
+const fmtX = n => n == null ? '—' : Number(n).toFixed(1) + 'x';
+const fmtDate = ts => ts ? new Date(ts).toLocaleDateString('en-AU',{day:'numeric',month:'short',year:'numeric'}) : '—';
+
+function stageBadge(s) {
+  const cls = 'stage-' + (s||'').replace(/ /g,'-');
+  return `<span class="badge ${cls}">${s||'—'}</span>`;
+}
+
+function scoreDisplay(pct) {
+  if (pct == null) return '<span class="score-pill score-na">No data</span>';
+  if (pct >= 72) return `<span class="score-pill score-pursue">${pct.toFixed(0)}% Pursue</span>`;
+  if (pct >= 50) return `<span class="score-pill score-dig">${pct.toFixed(0)}% Dig Deeper</span>`;
+  return `<span class="score-pill score-skip">${pct.toFixed(0)}% Skip</span>`;
+}
+
+function calcScore(scores, weights) {
+  const wm = {};
+  weights.forEach(w => wm[w.dimension_key] = { eff: w.custom_weight || w.default_weight, pillar: w.pillar });
+  let total = 0, max = 0;
+  const pillars = { target_quality:{w:0,m:0}, deal_structure:{w:0,m:0}, buyer_fit:{w:0,m:0} };
+  scores.forEach(s => {
+    if (!s.score) return;
+    const w = wm[s.dimension_key];
+    if (!w) return;
+    total += s.score * w.eff;
+    max   += 5 * w.eff;
+    pillars[w.pillar].w += s.score * w.eff;
+    pillars[w.pillar].m += 5 * w.eff;
+  });
+  const pct = max > 0 ? (total / max) * 100 : null;
+  const pp = {};
+  Object.keys(pillars).forEach(p => { pp[p] = pillars[p].m > 0 ? (pillars[p].w / pillars[p].m) * 100 : null; });
+  return { pct, pillars: pp, scored: scores.filter(s=>s.score).length, total: scores.length };
+}
+
+function fillClass(pct) {
+  if (pct == null) return 'fill-gray';
+  if (pct >= 72) return 'fill-green';
+  if (pct >= 50) return 'fill-amber';
+  return 'fill-red';
+}
+
+// ─── NAVIGATION ──────────────────────────────────────────────────────────────
+function navigate(page, dealId) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+
+  const pageEl = document.getElementById('page-' + page);
+  if (pageEl) pageEl.classList.add('active');
+
+  const navMap = { dashboard: 0, deals: 1, settings: 2 };
+  const navLinks = document.querySelectorAll('.nav-link');
+  if (navMap[page] !== undefined) navLinks[navMap[page]].classList.add('active');
+
+  if (page === 'dashboard') loadDashboard();
+  else if (page === 'deals') loadDeals();
+  else if (page === 'deal' && dealId) { state.currentDealId = dealId; loadDealDetail(dealId); }
+  else if (page === 'settings') loadSettings();
+
+  window.scrollTo(0, 0);
+  document.getElementById('main').scrollTo(0, 0);
+}
+
+function switchTab(name, el) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('tab-' + name).classList.add('active');
+  if (name === 'assessment') renderAssessmentTab();
+  else if (name === 'risk') renderRiskTab();
+  else if (name === 'valuation') renderValuationTab();
+  else if (name === 'notes') renderNotesTab();
+}
+
+// ─── DASHBOARD ───────────────────────────────────────────────────────────────
+async function loadDashboard() {
+  const { data: deals } = await sb.from('deals').select('*').order('created_at', { ascending: false });
+  if (!deals) return;
+
+  const stages = ['Initial Review','Due Diligence','Offer','On Hold','Dead','Acquired'];
+  const stageCounts = {};
+  stages.forEach(s => stageCounts[s] = 0);
+  deals.forEach(d => { if (stageCounts[d.stage] !== undefined) stageCounts[d.stage]++; });
+
+  const active = deals.filter(d => !['Dead','Acquired'].includes(d.stage));
+  const scores = deals.filter(d => d.overall_score != null);
+  const avgScore = scores.length ? scores.reduce((a,b) => a + b.overall_score, 0) / scores.length : null;
+
+  document.getElementById('dash-stats').innerHTML = `
+    <div class="stat-card"><div class="lbl">Total Deals</div><div class="val">${deals.length}</div><div class="sub">all time</div></div>
+    <div class="stat-card"><div class="lbl">Active Pipeline</div><div class="val">${active.length}</div><div class="sub">in review or DD</div></div>
+    <div class="stat-card"><div class="lbl">Avg Score</div><div class="val">${avgScore ? avgScore.toFixed(0)+'%' : '—'}</div><div class="sub">${scores.length} scored deals</div></div>
+    <div class="stat-card"><div class="lbl">In DD</div><div class="val">${stageCounts['Due Diligence']}</div><div class="sub">due diligence</div></div>
+    <div class="stat-card"><div class="lbl">Acquired</div><div class="val">${stageCounts['Acquired']}</div><div class="sub">completed</div></div>`;
+
+  document.getElementById('dash-pipeline').innerHTML = stages.map(s =>
+    `<div class="pipe-card"><div class="stage-name">${s}</div><div class="count" style="color:${s==='Dead'?'var(--danger)':s==='Acquired'?'var(--success)':'var(--accent)'}">${stageCounts[s]}</div></div>`
+  ).join('');
+
+  const recent = deals.slice(0, 8);
+  document.getElementById('dash-recent').innerHTML = recent.length ? `
+    <table><thead><tr><th>Name</th><th>Industry</th><th>Ask</th><th>EBITDA</th><th>Score</th><th>Stage</th><th>Updated</th></tr></thead>
+    <tbody>${recent.map(d => `
+      <tr onclick="navigate('deal','${d.id}')">
+        <td class="td-main">${d.name}</td>
+        <td>${d.industry||'—'}</td>
+        <td>${fmtM(d.asking_price)}</td>
+        <td>${fmt$(d.ebitda_normalised||d.ebitda_reported)}</td>
+        <td>${scoreDisplay(d.overall_score)}</td>
+        <td>${stageBadge(d.stage)}</td>
+        <td class="text-muted text-sm">${fmtDate(d.updated_at)}</td>
+      </tr>`).join('')}
+    </tbody></table>` : '<div class="empty"><div class="ei">📋</div><h3>No deals yet</h3><p>Add your first deal to get started.</p></div>';
+}
+
+// ─── DEALS LIST ──────────────────────────────────────────────────────────────
+function setStageFilter(stage, btn) {
+  state.stageFilter = stage;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  loadDeals();
+}
+
+async function loadDeals() {
+  const wrap = document.getElementById('deals-table');
+  wrap.innerHTML = '<div class="loading"><div class="spinner"></div> Loading deals…</div>';
+  let q = sb.from('deals').select('*').order('updated_at', { ascending: false });
+  if (state.stageFilter) q = q.eq('stage', state.stageFilter);
+  const { data: deals } = await q;
+  if (!deals || deals.length === 0) {
+    wrap.innerHTML = '<div class="empty"><div class="ei">🔍</div><h3>No deals found</h3><p>Add a new deal or change the stage filter.</p></div>';
+    return;
+  }
+  wrap.innerHTML = `<table><thead><tr>
+    <th>Business</th><th>Industry</th><th>Location</th><th>Ask</th><th>Norm. EBITDA</th><th>Multiple</th><th>Score</th><th>Stage</th><th>Top Red Flag</th><th>Updated</th>
+  </tr></thead><tbody>
+  ${deals.map(d => `<tr onclick="navigate('deal','${d.id}')">
+    <td><div class="td-main">${d.name}</div><div class="td-sub">${d.industry||''}</div></td>
+    <td>${d.industry||'—'}</td>
+    <td>${d.location||'—'}</td>
+    <td>${fmtM(d.asking_price)}</td>
+    <td>${fmt$(d.ebitda_normalised)}</td>
+    <td>${fmtX(d.ev_ebitda_multiple)}</td>
+    <td>${scoreDisplay(d.overall_score)}</td>
+    <td>${stageBadge(d.stage)}</td>
+    <td class="text-sm text-muted" style="max-width:180px">${d.top_red_flag||'—'}</td>
+    <td class="text-sm text-muted">${fmtDate(d.updated_at)}</td>
+  </tr>`).join('')}
+  </tbody></table>`;
+}
+
+// ─── DEAL DETAIL ─────────────────────────────────────────────────────────────
+async function loadDealDetail(id) {
+  state.deal = null; state.dealScores = [];
+  document.getElementById('deal-hdr').innerHTML = '<div class="loading"><div class="spinner"></div> Loading…</div>';
+
+  const [{ data: deal }, { data: scores }, { data: weights }] = await Promise.all([
+    sb.from('deals').select('*').eq('id', id).single(),
+    sb.from('deal_scores').select('*').eq('deal_id', id),
+    sb.from('scoring_weights').select('*').order('sort_order')
+  ]);
+
+  state.deal = deal;
+  state.dealScores = scores || [];
+  state.weights = weights || [];
+
+  if (!deal) { document.getElementById('deal-hdr').innerHTML = '<p>Deal not found.</p>'; return; }
+
+  const sc = calcScore(state.dealScores, state.weights);
+  const multipleDisplay = deal.asking_price && deal.ebitda_normalised
+    ? fmtX(deal.asking_price / deal.ebitda_normalised)
+    : (deal.ev_ebitda_multiple ? fmtX(deal.ev_ebitda_multiple) : '—');
+
+  document.getElementById('deal-hdr').innerHTML = `
+    <div class="deal-hdr">
+      <div class="deal-hdr-top">
+        <div>
+          <h2>${deal.name}</h2>
+          <div class="deal-hdr-meta">
+            <span>${stageBadge(deal.stage)}</span>
+            ${deal.industry ? `<span>🏭 ${deal.industry}</span>` : ''}
+            ${deal.location ? `<span>📍 ${deal.location}</span>` : ''}
+            ${deal.asking_price ? `<span>💰 Ask: ${fmtM(deal.asking_price)}</span>` : ''}
+            ${deal.ebitda_normalised ? `<span>📈 EBITDA: ${fmt$(deal.ebitda_normalised)}</span>` : ''}
+            ${multipleDisplay !== '—' ? `<span>🔢 ${multipleDisplay}</span>` : ''}
+          </div>
+        </div>
+        <div class="deal-hdr-actions">
+          ${scoreDisplay(sc.pct)}
+          ${deal.stage === 'Initial Review' ? `<button class="btn btn-success btn-sm" onclick="openMoveToDd()">→ Move to DD</button>` : ''}
+          <button class="btn btn-secondary btn-sm" onclick="openEditDeal()">✏️ Edit</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteDeal('${deal.id}')">🗑</button>
+        </div>
+      </div>
+    </div>`;
+
+  // Reset tabs
+  document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', i===0));
+  document.querySelectorAll('.tab-content').forEach((t,i) => t.classList.toggle('active', i===0));
+  renderOverviewTab();
+}
+
+function renderOverviewTab() {
+  const d = state.deal;
+  document.getElementById('tab-overview').innerHTML = `
+    <div class="section">
+      <div class="section-hdr"><h3>Basic Information</h3></div>
+      <div class="section-body">
+        <div class="info-grid">
+          <div class="info-item"><div class="info-lbl">Industry</div><div class="info-val">${d.industry||'—'}</div></div>
+          <div class="info-item"><div class="info-lbl">Location</div><div class="info-val">${d.location||'—'}</div></div>
+          <div class="info-item"><div class="info-lbl">Years Operating</div><div class="info-val">${d.years_operating||'—'}</div></div>
+          <div class="info-item"><div class="info-lbl">Deal Structure</div><div class="info-val">${d.deal_structure||'—'}</div></div>
+          <div class="info-item"><div class="info-lbl">Asking Price</div><div class="info-val">${fmt$(d.asking_price)}</div></div>
+          <div class="info-item"><div class="info-lbl">Reported EBITDA</div><div class="info-val">${fmt$(d.ebitda_reported)}</div></div>
+          <div class="info-item"><div class="info-lbl">Normalised EBITDA</div><div class="info-val">${fmt$(d.ebitda_normalised)}</div></div>
+          <div class="info-item"><div class="info-lbl">Revenue</div><div class="info-val">${fmt$(d.revenue)}</div></div>
+          <div class="info-item"><div class="info-lbl">EV / EBITDA Multiple</div><div class="info-val">${d.asking_price && d.ebitda_normalised ? fmtX(d.asking_price/d.ebitda_normalised) : fmtX(d.ev_ebitda_multiple)}</div></div>
+          <div class="info-item"><div class="info-lbl">Broker</div><div class="info-val">${d.broker_name||'—'}${d.broker_email ? ' · ' + d.broker_email : ''}</div></div>
+        </div>
+        ${d.business_model ? `<div class="divider"></div><div class="info-item"><div class="info-lbl">Business Model</div><div class="info-val" style="line-height:1.6">${d.business_model}</div></div>` : ''}
+        ${d.sale_reason ? `<div class="divider"></div><div class="info-item"><div class="info-lbl">Reason for Sale</div><div class="info-val" style="line-height:1.6">${d.sale_reason}</div></div>` : ''}
+        ${d.source_url ? `<div class="divider"></div><div class="info-item"><div class="info-lbl">Source</div><div class="info-val"><a href="${d.source_url}" target="_blank" style="color:var(--accent)">${d.source_url}</a></div></div>` : ''}
+        ${d.general_notes ? `<div class="divider"></div><div class="info-item"><div class="info-lbl">General Notes</div><div class="info-val" style="line-height:1.6;white-space:pre-wrap">${d.general_notes}</div></div>` : ''}
+      </div>
+    </div>
+    <div class="section">
+      <div class="section-hdr"><h3>Financial Summary</h3><button class="btn btn-secondary btn-sm" onclick="renderFinEdit()">✏️ Edit</button></div>
+      <div class="section-body" id="fin-body"><div class="loading" style="padding:20px"><div class="spinner"></div></div></div>
+    </div>`;
+  loadFinancials();
+}
+
+async function loadFinancials() {
+  const { data: rows } = await sb.from('financial_summary').select('*').eq('deal_id', state.currentDealId).order('year', { ascending: false });
+  renderFinView(rows || []);
+}
+
+function renderFinView(rows) {
+  if (!rows.length) {
+    document.getElementById('fin-body').innerHTML = '<p class="text-muted text-sm">No financial data recorded yet.</p><button class="btn btn-secondary btn-sm mt-8" onclick="renderFinEdit()">+ Add Financials</button>';
+    return;
+  }
+  const fields = ['revenue','ebitda','ebitda_margin','sde','net_profit'];
+  const labels = ['Revenue','EBITDA','EBITDA Margin %','SDE','Net Profit'];
+  document.getElementById('fin-body').innerHTML = `
+    <table class="fin-tbl">
+      <thead><tr><th>Metric</th>${rows.map(r=>`<th>${r.year}</th>`).join('')}</tr></thead>
+      <tbody>${fields.map((f,i)=>`<tr><td>${labels[i]}</td>${rows.map(r=>`<td style="text-align:right">${r[f] != null ? (f==='ebitda_margin' ? fmtPct(r[f]) : fmt$(r[f])) : '—'}</td>`).join('')}</tr>`).join('')}
+      </tbody>
+    </table>`;
+}
+
+function renderFinEdit() {
+  const years = [new Date().getFullYear()-2, new Date().getFullYear()-1, new Date().getFullYear()];
+  document.getElementById('fin-body').innerHTML = `
+    <table class="fin-tbl" id="fin-edit-tbl">
+      <thead><tr><th>Metric</th>${years.map(y=>`<th><input style="width:70px;text-align:center;border:none;background:transparent;font-size:11px;font-weight:600" value="${y}" class="fin-year-input"></th>`).join('')}</tr></thead>
+      <tbody>
+        ${[['revenue','Revenue $'],['ebitda','EBITDA $'],['ebitda_margin','EBITDA Margin %'],['sde','SDE $'],['net_profit','Net Profit $']].map(([f,l])=>`
+        <tr><td>${l}</td>${years.map((_,i)=>`<td><input class="fin-input" data-field="${f}" data-yi="${i}" style="text-align:right" placeholder="—"></td>`).join('')}</tr>`).join('')}
+      </tbody>
+    </table>
+    <div class="form-actions"><button class="btn btn-primary btn-sm" onclick="saveFinancials(${JSON.stringify(years)})">Save</button><button class="btn btn-secondary btn-sm" onclick="loadFinancials()">Cancel</button></div>`;
+  // load existing to pre-fill
+  sb.from('financial_summary').select('*').eq('deal_id', state.currentDealId).then(({data}) => {
+    if (!data) return;
+    data.forEach(row => {
+      const yi = years.indexOf(row.year);
+      if (yi < 0) return;
+      document.querySelectorAll(`.fin-input[data-yi="${yi}"]`).forEach(inp => {
+        const f = inp.dataset.field;
+        if (row[f] != null) inp.value = row[f];
+      });
+      const yinp = document.querySelectorAll('.fin-year-input')[yi];
+      if (yinp) yinp.value = row.year;
+    });
+  });
+}
+
+async function saveFinancials(years) {
+  const yearEls = document.querySelectorAll('.fin-year-input');
+  const actualYears = Array.from(yearEls).map(e => parseInt(e.value) || years[Array.from(yearEls).indexOf(e)]);
+  const fields = ['revenue','ebitda','ebitda_margin','sde','net_profit'];
+  const rows = actualYears.map((y, yi) => {
+    const row = { deal_id: state.currentDealId, year: y };
+    fields.forEach(f => {
+      const inp = document.querySelector(`.fin-input[data-field="${f}"][data-yi="${yi}"]`);
+      row[f] = inp && inp.value !== '' ? parseFloat(inp.value) : null;
+    });
+    return row;
+  });
+  await sb.from('financial_summary').delete().eq('deal_id', state.currentDealId);
+  await sb.from('financial_summary').insert(rows.filter(r => Object.values(r).some((v,i) => i > 1 && v != null)));
+  loadFinancials();
+}
+
+// ─── ASSESSMENT TAB ──────────────────────────────────────────────────────────
+async function renderAssessmentTab() {
+  if (!state.weights.length) {
+    const { data } = await sb.from('scoring_weights').select('*').order('sort_order');
+    state.weights = data || [];
+  }
+  if (!state.dealScores.length) {
+    const { data } = await sb.from('deal_scores').select('*').eq('deal_id', state.currentDealId);
+    state.dealScores = data || [];
+  }
+
+  const sc = calcScore(state.dealScores, state.weights);
+  const scoreMap = {};
+  state.dealScores.forEach(s => scoreMap[s.dimension_key] = s);
+
+  const pillarNames = { target_quality: 'Pillar 1: Target Quality', deal_structure: 'Pillar 2: Deal Structure', buyer_fit: 'Pillar 3: Buyer Fit' };
+  const pillarOrder = ['target_quality','deal_structure','buyer_fit'];
+
+  const scoreBigClass = sc.pct == null ? 'score-big-na' : sc.pct >= 72 ? 'score-big-pursue' : sc.pct >= 50 ? 'score-big-dig' : 'score-big-skip';
+  const verdict = sc.pct == null ? 'Insufficient data' : sc.pct >= 72 ? 'Pursue' : sc.pct >= 50 ? 'Dig Deeper' : 'Skip';
+
+  let html = `
+    <div style="display:grid;grid-template-columns:1fr 260px;gap:16px;margin-bottom:16px">
+      <div>
+        ${pillarOrder.map(p => {
+          const pp = sc.pillars[p];
+          return `<div class="pillar-bar">
+            <div class="pillar-bar-hdr">
+              <span class="pillar-bar-name">${pillarNames[p]}</span>
+              <span class="pillar-bar-pct" style="color:${pp==null?'var(--muted)':pp>=72?'var(--success)':pp>=50?'var(--warning)':'var(--danger)'}">${pp != null ? pp.toFixed(0)+'%' : 'No data'}</span>
+            </div>
+            <div class="progress"><div class="progress-fill ${fillClass(pp)}" style="width:${pp||0}%"></div></div>
+          </div>`;
+        }).join('')}
+      </div>
+      <div class="score-big ${scoreBigClass}">
+        <div class="pct">${sc.pct != null ? sc.pct.toFixed(0)+'%' : '—'}</div>
+        <div class="verdict">${verdict}</div>
+        <div class="caveat">${sc.scored} of ${state.weights.length} dimensions scored</div>
+      </div>
+    </div>
+    <div class="section">
+      <div class="section-hdr"><h3>Scoring Dimensions</h3><button class="btn btn-primary btn-sm" onclick="saveAllScores()">💾 Save Scores</button></div>
+      <div class="section-body">`;
+
+  pillarOrder.forEach(pillar => {
+    const dims = state.weights.filter(w => w.pillar === pillar);
+    html += `<div class="dim-group">
+      <div class="dim-group-title">${pillarNames[pillar]}</div>
+      <div style="display:grid;grid-template-columns:20px 1fr;gap:0 8px;font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;padding:4px 0">
+        <span></span><span style="display:grid;grid-template-columns:1fr 56px 70px 1fr;gap:10px"><span>Dimension</span><span style="text-align:center">Weight</span><span style="text-align:center">Score 1–5</span><span>Notes</span></span>
+      </div>`;
+    dims.forEach(w => {
+      const existing = scoreMap[w.dimension_key];
+      const effectiveWeight = w.custom_weight || w.default_weight;
+      html += `<div class="dim-row" style="grid-template-columns:1fr 56px 70px 1fr">
+        <div>
+          <div class="dim-name">${w.dimension_name}</div>
+          <div class="dim-anchor">5: ${w.score_5_anchor?.substring(0,60)}…</div>
+          <div class="dim-anchor">1: ${w.score_1_anchor?.substring(0,60)}…</div>
+        </div>
+        <div class="dim-wt">${effectiveWeight}×</div>
+        <div>
+          <select class="score-sel" id="score-${w.dimension_key}">
+            <option value="">—</option>
+            <option value="1" ${existing?.score===1?'selected':''}>1</option>
+            <option value="2" ${existing?.score===2?'selected':''}>2</option>
+            <option value="3" ${existing?.score===3?'selected':''}>3</option>
+            <option value="4" ${existing?.score===4?'selected':''}>4</option>
+            <option value="5" ${existing?.score===5?'selected':''}>5</option>
+          </select>
+        </div>
+        <div><textarea class="dim-notes-input" id="snotes-${w.dimension_key}" placeholder="Notes…">${existing?.notes||''}</textarea></div>
+      </div>`;
+    });
+    html += `</div>`;
+  });
+
+  html += `</div></div>`;
+  document.getElementById('tab-assessment').innerHTML = html;
+}
+
+async function saveAllScores() {
+  const upserts = [];
+  state.weights.forEach(w => {
+    const sel = document.getElementById('score-' + w.dimension_key);
+    const notes = document.getElementById('snotes-' + w.dimension_key);
+    if (!sel) return;
+    const scoreVal = sel.value ? parseInt(sel.value) : null;
+    upserts.push({
+      deal_id: state.currentDealId,
+      dimension_key: w.dimension_key,
+      score: scoreVal,
+      notes: notes?.value || null
+    });
+  });
+  await sb.from('deal_scores').upsert(upserts, { onConflict: 'deal_id,dimension_key' });
+  const { data: scores } = await sb.from('deal_scores').select('*').eq('deal_id', state.currentDealId);
+  state.dealScores = scores || [];
+  const sc = calcScore(state.dealScores, state.weights);
+  await sb.from('deals').update({ overall_score: sc.pct }).eq('id', state.currentDealId);
+  state.deal.overall_score = sc.pct;
+  renderAssessmentTab();
+  showToast('Scores saved');
+}
+
+// ─── RISK & QUESTIONS TAB ────────────────────────────────────────────────────
+async function renderRiskTab() {
+  const [{ data: flags }, { data: questions }] = await Promise.all([
+    sb.from('red_flags').select('*').eq('deal_id', state.currentDealId).order('created_at'),
+    sb.from('key_questions').select('*').eq('deal_id', state.currentDealId).order('created_at')
+  ]);
+
+  document.getElementById('tab-risk').innerHTML = `
+    <div class="section">
+      <div class="section-hdr"><h3>Red Flag Register</h3><button class="btn btn-primary btn-sm" onclick="openModal('modal-rf')">+ Add Flag</button></div>
+      <div class="section-body" id="rf-body">
+        ${!flags?.length ? '<p class="text-muted text-sm">No red flags recorded.</p>' : `
+        <div style="display:grid;grid-template-columns:64px 1fr 1fr auto;gap:10px;font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;padding:0 0 6px;border-bottom:1px solid var(--border)">
+          <span>Risk</span><span>Description</span><span>Evidence / Action</span><span></span>
+        </div>
+        ${flags.map(f => `<div class="rf-row">
+          <span class="badge risk-${f.risk_level}">${f.risk_level}</span>
+          <div><div style="font-size:13px;font-weight:500">${f.description}</div></div>
+          <div style="font-size:12px;color:var(--muted)">
+            ${f.evidence ? `<div><strong>Evidence:</strong> ${f.evidence}</div>` : ''}
+            ${f.recommended_action ? `<div class="mt-4"><strong>Action:</strong> ${f.recommended_action}</div>` : ''}
+          </div>
+          <button class="btn btn-danger btn-xs" onclick="deleteRedFlag('${f.id}')">×</button>
+        </div>`).join('')}`}
+      </div>
+    </div>
+    <div class="section">
+      <div class="section-hdr"><h3>Key Questions for Vendor / Broker</h3><button class="btn btn-primary btn-sm" onclick="openModal('modal-q')">+ Add Question</button></div>
+      <div class="section-body" id="q-body">
+        ${!questions?.length ? '<p class="text-muted text-sm">No questions recorded yet.</p>' : questions.map(q => `
+        <div class="q-row">
+          <input type="checkbox" class="q-cb" ${q.answered?'checked':''} onchange="toggleQuestion('${q.id}',this.checked)">
+          <div class="flex" style="flex-direction:column;flex:1;gap:4px">
+            <div class="q-text ${q.answered?'done':''}">${q.question}</div>
+            ${q.answer ? `<div class="text-sm text-muted" style="font-style:italic">→ ${q.answer}</div>` : ''}
+          </div>
+          <button class="q-del" onclick="deleteQuestion('${q.id}')">×</button>
+        </div>`).join('')}
+      </div>
+    </div>`;
+}
+
+async function deleteRedFlag(id) {
+  await sb.from('red_flags').delete().eq('id', id);
+  renderRiskTab();
+}
+
+async function deleteQuestion(id) {
+  await sb.from('key_questions').delete().eq('id', id);
+  renderRiskTab();
+}
+
+async function toggleQuestion(id, answered) {
+  await sb.from('key_questions').update({ answered }).eq('id', id);
+  renderRiskTab();
+}
+
+// ─── VALUATION TAB ───────────────────────────────────────────────────────────
+async function renderValuationTab() {
+  let { data: scenarios } = await sb.from('valuation_scenarios').select('*').eq('deal_id', state.currentDealId);
+  const scenTypes = ['Conservative','Base','Optimistic'];
+
+  // Ensure 3 rows exist
+  const existing = new Set((scenarios||[]).map(s => s.scenario));
+  const missing = scenTypes.filter(s => !existing.has(s));
+  if (missing.length) {
+    await sb.from('valuation_scenarios').insert(missing.map(s => ({ deal_id: state.currentDealId, scenario: s })));
+    const { data: fresh } = await sb.from('valuation_scenarios').select('*').eq('deal_id', state.currentDealId);
+    scenarios = fresh;
+  }
+
+  const askEV = state.deal?.asking_price;
+
+  document.getElementById('tab-valuation').innerHTML = `
+    <div class="section">
+      <div class="section-hdr">
+        <h3>Indicative Valuation Range</h3>
+        <button class="btn btn-primary btn-sm" onclick="saveValuation()">💾 Save</button>
+      </div>
+      <div class="section-body">
+        ${askEV ? `<p class="text-sm text-muted" style="margin-bottom:14px">Asking price: <strong>${fmt$(askEV)}</strong> — compare against your scenarios below.</p>` : ''}
+        <div class="val-grid">
+          ${scenTypes.map(type => {
+            const s = (scenarios||[]).find(x => x.scenario === type) || {};
+            const color = type==='Conservative'?'var(--danger)':type==='Base'?'var(--warning)':'var(--success)';
+            const ev = s.normalised_ebitda && s.multiple ? s.normalised_ebitda * s.multiple : s.enterprise_value;
+            return `<div class="val-card" style="border-top:3px solid ${color}">
+              <h4 style="color:${color}">${type}</h4>
+              <div class="val-field"><label>Normalised EBITDA ($)</label><input id="val-ebitda-${type}" type="number" value="${s.normalised_ebitda||''}" placeholder="—" oninput="calcValEV('${type}')"></div>
+              <div class="val-field"><label>Multiple (x)</label><input id="val-multiple-${type}" type="number" step="0.1" value="${s.multiple||''}" placeholder="—" oninput="calcValEV('${type}')"></div>
+              <div class="val-field"><label>Notes</label><input id="val-notes-${type}" value="${s.notes||''}" placeholder="Justification…"></div>
+              <div class="val-ev" id="val-ev-${type}">${ev ? 'EV: ' + fmt$(ev) : 'EV: —'}</div>
+              <input type="hidden" id="val-id-${type}" value="${s.id||''}">
+            </div>`;
+          }).join('')}
+        </div>
+      </div>
+    </div>`;
+}
+
+function calcValEV(type) {
+  const ebitda = parseFloat(document.getElementById(`val-ebitda-${type}`)?.value);
+  const multiple = parseFloat(document.getElementById(`val-multiple-${type}`)?.value);
+  const ev = ebitda && multiple ? ebitda * multiple : null;
+  document.getElementById(`val-ev-${type}`).textContent = ev ? 'EV: ' + fmt$(ev) : 'EV: —';
+}
+
+async function saveValuation() {
+  const types = ['Conservative','Base','Optimistic'];
+  const updates = types.map(type => ({
+    id: document.getElementById(`val-id-${type}`)?.value || undefined,
+    deal_id: state.currentDealId,
+    scenario: type,
+    normalised_ebitda: parseFloat(document.getElementById(`val-ebitda-${type}`)?.value) || null,
+    multiple: parseFloat(document.getElementById(`val-multiple-${type}`)?.value) || null,
+    notes: document.getElementById(`val-notes-${type}`)?.value || null,
+    enterprise_value: (() => {
+      const e = parseFloat(document.getElementById(`val-ebitda-${type}`)?.value);
+      const m = parseFloat(document.getElementById(`val-multiple-${type}`)?.value);
+      return e && m ? e * m : null;
+    })()
+  }));
+  await sb.from('valuation_scenarios').upsert(updates, { onConflict: 'id' });
+  showToast('Valuation saved');
+}
+
+// ─── NOTES TAB ───────────────────────────────────────────────────────────────
+async function renderNotesTab() {
+  const { data: notes } = await sb.from('deal_notes').select('*').eq('deal_id', state.currentDealId).order('created_at', { ascending: false });
+  document.getElementById('tab-notes').innerHTML = `
+    <div class="section">
+      <div class="section-hdr"><h3>Notes</h3></div>
+      <div class="section-body">
+        <div class="fg"><label>Add Note</label><textarea class="fc" id="new-note-text" placeholder="Add a note, observation or update…" rows="3"></textarea></div>
+        <div class="form-actions">
+          <input class="fc" id="new-note-author" placeholder="Author (optional)" style="width:180px">
+          <button class="btn btn-primary btn-sm" onclick="addNote()">Add Note</button>
+        </div>
+        <div class="divider"></div>
+        <div id="notes-list">
+          ${!notes?.length ? '<p class="text-muted text-sm">No notes yet.</p>' :
+            notes.map(n => `<div class="note-item">
+              <div class="note-meta">${fmtDate(n.created_at)}${n.author ? ' · ' + n.author : ''}</div>
+              <div class="note-text">${n.note}</div>
+            </div>`).join('')}
+        </div>
+      </div>
+    </div>`;
+}
+
+async function addNote() {
+  const text = document.getElementById('new-note-text')?.value?.trim();
+  const author = document.getElementById('new-note-author')?.value?.trim();
+  if (!text) return;
+  await sb.from('deal_notes').insert({ deal_id: state.currentDealId, note: text, author: author || null });
+  renderNotesTab();
+}
+
+// ─── MODALS ──────────────────────────────────────────────────────────────────
+function openModal(id) { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+function openAddDeal() {
+  state.editingDealId = null;
+  document.getElementById('modal-deal-title').textContent = 'New Deal';
+  ['name','industry','location','years','stage','ask','ebitda','nebitda','rev','structure','broker','bemail','model','reason','url'].forEach(f => {
+    const el = document.getElementById('fd-' + f);
+    if (el) el.value = f === 'stage' ? 'Initial Review' : '';
+  });
+  openModal('modal-deal');
+}
+
+function openEditDeal() {
+  const d = state.deal;
+  state.editingDealId = d.id;
+  document.getElementById('modal-deal-title').textContent = 'Edit Deal';
+  document.getElementById('fd-name').value = d.name || '';
+  document.getElementById('fd-industry').value = d.industry || '';
+  document.getElementById('fd-location').value = d.location || '';
+  document.getElementById('fd-years').value = d.years_operating || '';
+  document.getElementById('fd-stage').value = d.stage || 'Initial Review';
+  document.getElementById('fd-ask').value = d.asking_price || '';
+  document.getElementById('fd-ebitda').value = d.ebitda_reported || '';
+  document.getElementById('fd-nebitda').value = d.ebitda_normalised || '';
+  document.getElementById('fd-rev').value = d.revenue || '';
+  document.getElementById('fd-structure').value = d.deal_structure || '';
+  document.getElementById('fd-broker').value = d.broker_name || '';
+  document.getElementById('fd-bemail').value = d.broker_email || '';
+  document.getElementById('fd-model').value = d.business_model || '';
+  document.getElementById('fd-reason').value = d.sale_reason || '';
+  document.getElementById('fd-url').value = d.source_url || '';
+  openModal('modal-deal');
+}
+
+async function saveDeal() {
+  const name = document.getElementById('fd-name').value.trim();
+  if (!name) { alert('Business name is required.'); return; }
+  const payload = {
+    name,
+    industry: document.getElementById('fd-industry').value || null,
+    location: document.getElementById('fd-location').value || null,
+    years_operating: parseInt(document.getElementById('fd-years').value) || null,
+    stage: document.getElementById('fd-stage').value,
+    asking_price: parseFloat(document.getElementById('fd-ask').value) || null,
+    ebitda_reported: parseFloat(document.getElementById('fd-ebitda').value) || null,
+    ebitda_normalised: parseFloat(document.getElementById('fd-nebitda').value) || null,
+    revenue: parseFloat(document.getElementById('fd-rev').value) || null,
+    deal_structure: document.getElementById('fd-structure').value || null,
+    broker_name: document.getElementById('fd-broker').value || null,
+    broker_email: document.getElementById('fd-bemail').value || null,
+    business_model: document.getElementById('fd-model').value || null,
+    sale_reason: document.getElementById('fd-reason').value || null,
+    source_url: document.getElementById('fd-url').value || null,
+  };
+  if (payload.asking_price && payload.ebitda_normalised) {
+    payload.ev_ebitda_multiple = payload.asking_price / payload.ebitda_normalised;
+  }
+
+  if (state.editingDealId) {
+    await sb.from('deals').update(payload).eq('id', state.editingDealId);
+    closeModal('modal-deal');
+    loadDealDetail(state.editingDealId);
+  } else {
+    const { data } = await sb.from('deals').insert(payload).select().single();
+    closeModal('modal-deal');
+    if (data) navigate('deal', data.id);
+  }
+}
+
+async function deleteDeal(id) {
+  if (!confirm('Delete this deal and all associated data? This cannot be undone.')) return;
+  await sb.from('deals').delete().eq('id', id);
+  navigate('deals');
+}
+
+function openMoveToDd() {
+  document.getElementById('dd-deal-name').textContent = state.deal?.name || '';
+  document.getElementById('dd-notes').value = '';
+  openModal('modal-dd');
+}
+
+async function confirmMoveToDd() {
+  const notes = document.getElementById('dd-notes').value?.trim();
+  await sb.from('deals').update({ stage: 'Due Diligence', moved_to_dd_at: new Date().toISOString() }).eq('id', state.currentDealId);
+  if (notes) {
+    await sb.from('deal_notes').insert({ deal_id: state.currentDealId, note: `[DD Handover] ${notes}`, author: 'System' });
+  }
+  closeModal('modal-dd');
+  loadDealDetail(state.currentDealId);
+  showToast('Moved to Due Diligence ✓');
+}
+
+async function saveRedFlag() {
+  const desc = document.getElementById('rf-desc').value?.trim();
+  if (!desc) return;
+  await sb.from('red_flags').insert({
+    deal_id: state.currentDealId,
+    description: desc,
+    risk_level: document.getElementById('rf-level').value,
+    evidence: document.getElementById('rf-evidence').value || null,
+    recommended_action: document.getElementById('rf-action').value || null
+  });
+  closeModal('modal-rf');
+  renderRiskTab();
+}
+
+async function saveQuestion() {
+  const q = document.getElementById('q-text').value?.trim();
+  if (!q) return;
+  await sb.from('key_questions').insert({ deal_id: state.currentDealId, question: q });
+  closeModal('modal-q');
+  renderRiskTab();
+}
+
+// ─── SETTINGS ────────────────────────────────────────────────────────────────
+async function loadSettings() {
+  if (!state.weights.length) {
+    const { data } = await sb.from('scoring_weights').select('*').order('sort_order');
+    state.weights = data || [];
+  }
+  const pillarNames = { target_quality:'Pillar 1: Target Quality', deal_structure:'Pillar 2: Deal Structure', buyer_fit:'Pillar 3: Buyer Fit' };
+  const pillars = ['target_quality','deal_structure','buyer_fit'];
+  document.getElementById('settings-content').innerHTML = pillars.map(p => {
+    const dims = state.weights.filter(w => w.pillar === p);
+    return `<div class="wt-pillar card" style="margin-bottom:14px">
+      <div class="wt-pillar-title">${pillarNames[p]}</div>
+      <div class="wt-hdr"><span>Dimension</span><span>Score 5 Anchor</span><span style="text-align:center">Default</span><span style="text-align:center">Custom</span></div>
+      ${dims.map(w => `<div class="wt-row">
+        <div><div style="font-size:13px;font-weight:500">${w.dimension_name}</div></div>
+        <div class="text-xs text-muted" style="line-height:1.5">${w.score_5_anchor?.substring(0,80)}…</div>
+        <div style="text-align:center;color:var(--muted)">${w.default_weight}×</div>
+        <div><input class="wt-input" id="wt-${w.dimension_key}" type="number" min="1" max="10" value="${w.custom_weight ?? w.default_weight}"></div>
+      </div>`).join('')}
+    </div>`;
+  }).join('');
+}
+
+async function saveWeights() {
+  const updates = state.weights.map(w => ({
+    dimension_key: w.dimension_key,
+    custom_weight: parseInt(document.getElementById(`wt-${w.dimension_key}`)?.value) || w.default_weight
+  }));
+  for (const u of updates) {
+    await sb.from('scoring_weights').update({ custom_weight: u.custom_weight }).eq('dimension_key', u.dimension_key);
+  }
+  const { data } = await sb.from('scoring_weights').select('*').order('sort_order');
+  state.weights = data || [];
+  showToast('Weights saved ✓');
+}
+
+async function resetWeights() {
+  if (!confirm('Reset all weights to Acquiring Minds defaults?')) return;
+  await sb.from('scoring_weights').update({ custom_weight: null }).neq('dimension_key','');
+  const { data } = await sb.from('scoring_weights').select('*').order('sort_order');
+  state.weights = data || [];
+  loadSettings();
+  showToast('Weights reset to defaults');
+}
+
+// ─── TOAST ───────────────────────────────────────────────────────────────────
+function showToast(msg) {
+  const t = document.createElement('div');
+  t.style.cssText = 'position:fixed;bottom:24px;right:24px;background:#1e293b;color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;font-weight:500;z-index:999;opacity:0;transition:opacity .2s';
+  t.textContent = msg;
+  document.body.appendChild(t);
+  requestAnimationFrame(() => { t.style.opacity = '1'; setTimeout(() => { t.style.opacity = '0'; setTimeout(() => t.remove(), 200); }, 2500); });
+}
+
+// ─── INIT ─────────────────────────────────────────────────────────────────────
+window.addEventListener('load', () => { loadDashboard(); });
+</script>
+</body>
+</html>
