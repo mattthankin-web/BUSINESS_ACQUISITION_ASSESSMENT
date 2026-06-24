@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Acquisition Tracker</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <style>
 :root{--primary:#1e3a5f;--accent:#2563eb;--success:#16a34a;--warning:#b45309;--danger:#dc2626;--bg:#f1f5f9;--card:#fff;--border:#e2e8f0;--text:#1e293b;--muted:#64748b;--sw:220px}
 *{box-sizing:border-box;margin:0;padding:0}
@@ -142,8 +143,12 @@ select.fc{cursor:pointer}
 /* Dimension rows */
 .dim-group{margin-bottom:6px}
 .dim-group-title{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;padding:8px 0 6px;border-bottom:2px solid var(--border);margin-bottom:4px}
-.dim-row{display:grid;grid-template-columns:1fr 56px 70px;align-items:start;gap:10px;padding:10px 0;border-bottom:1px solid #f1f5f9}
+.dim-row{display:grid;grid-template-columns:1fr 56px 70px 1fr 52px;align-items:start;gap:10px;padding:10px 0;border-bottom:1px solid #f1f5f9}
 .dim-row:last-child{border-bottom:none}
+.dim-row.excluded{opacity:.45}
+.dim-row.excluded .dim-name{text-decoration:line-through;color:var(--muted)}
+.btn-na{padding:4px 8px;border-radius:5px;font-size:11px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:#fff;color:var(--muted);transition:all .15s}
+.btn-na.active{background:#fef3c7;color:#92400e;border-color:#fde68a}
 .dim-name{font-size:13px;font-weight:500}
 .dim-wt{font-size:11px;color:var(--muted);text-align:center;padding-top:2px}
 .dim-score-col{display:flex;flex-direction:column;gap:4px}
@@ -235,7 +240,7 @@ select.fc{cursor:pointer}
 <div id="sidebar">
   <div class="logo">
     <h1>Acquisition Tracker</h1>
-    <p>Matt &amp; Edwina · Private</p>
+    <p>Matt &amp; Lucy · Private</p>
   </div>
   <nav>
     <button class="nav-link active" onclick="navigate('dashboard')"><span class="ni">📊</span>Dashboard</button>
@@ -463,7 +468,7 @@ function calcScore(scores, weights) {
   let total = 0, max = 0;
   const pillars = { target_quality:{w:0,m:0}, deal_structure:{w:0,m:0}, buyer_fit:{w:0,m:0} };
   scores.forEach(s => {
-    if (!s.score) return;
+    if (!s.score || s.excluded) return; // skip blank AND explicitly excluded
     const w = wm[s.dimension_key];
     if (!w) return;
     total += s.score * w.eff;
@@ -474,7 +479,9 @@ function calcScore(scores, weights) {
   const pct = max > 0 ? (total / max) * 100 : null;
   const pp = {};
   Object.keys(pillars).forEach(p => { pp[p] = pillars[p].m > 0 ? (pillars[p].w / pillars[p].m) * 100 : null; });
-  return { pct, pillars: pp, scored: scores.filter(s=>s.score).length, total: scores.length };
+  const scored = scores.filter(s => s.score && !s.excluded).length;
+  const excluded = scores.filter(s => s.excluded).length;
+  return { pct, pillars: pp, scored, excluded, total: weights.length };
 }
 
 function fillClass(pct) {
@@ -745,10 +752,8 @@ async function renderAssessmentTab() {
     const { data } = await sb.from('scoring_weights').select('*').order('sort_order');
     state.weights = data || [];
   }
-  if (!state.dealScores.length) {
-    const { data } = await sb.from('deal_scores').select('*').eq('deal_id', state.currentDealId);
-    state.dealScores = data || [];
-  }
+  const { data: fresh } = await sb.from('deal_scores').select('*').eq('deal_id', state.currentDealId);
+  state.dealScores = fresh || [];
 
   const sc = calcScore(state.dealScores, state.weights);
   const scoreMap = {};
@@ -756,12 +761,17 @@ async function renderAssessmentTab() {
 
   const pillarNames = { target_quality: 'Pillar 1: Target Quality', deal_structure: 'Pillar 2: Deal Structure', buyer_fit: 'Pillar 3: Buyer Fit' };
   const pillarOrder = ['target_quality','deal_structure','buyer_fit'];
-
   const scoreBigClass = sc.pct == null ? 'score-big-na' : sc.pct >= 72 ? 'score-big-pursue' : sc.pct >= 50 ? 'score-big-dig' : 'score-big-skip';
   const verdict = sc.pct == null ? 'Insufficient data' : sc.pct >= 72 ? 'Pursue' : sc.pct >= 50 ? 'Dig Deeper' : 'Skip';
 
+  // Build chart data: scored non-excluded dims sorted by weight desc (tornado shape)
+  const chartDims = state.weights
+    .filter(w => { const s = scoreMap[w.dimension_key]; return s?.score && !s?.excluded; })
+    .sort((a,b) => (b.custom_weight||b.default_weight) - (a.custom_weight||a.default_weight));
+  const chartHeight = Math.max(180, chartDims.length * 30 + 60);
+
   let html = `
-    <div style="display:grid;grid-template-columns:1fr 260px;gap:16px;margin-bottom:16px">
+    <div style="display:grid;grid-template-columns:1fr 240px;gap:16px;margin-bottom:16px">
       <div>
         ${pillarOrder.map(p => {
           const pp = sc.pillars[p];
@@ -777,32 +787,52 @@ async function renderAssessmentTab() {
       <div class="score-big ${scoreBigClass}">
         <div class="pct">${sc.pct != null ? sc.pct.toFixed(0)+'%' : '—'}</div>
         <div class="verdict">${verdict}</div>
-        <div class="caveat">${sc.scored} of ${state.weights.length} dimensions scored</div>
+        <div class="caveat">${sc.scored} scored · ${sc.excluded} excluded · ${sc.total - sc.scored - sc.excluded} pending</div>
       </div>
     </div>
+
+    <div class="section" style="margin-bottom:14px">
+      <div class="section-hdr">
+        <h3>Score Impact Chart</h3>
+        <span class="text-xs text-muted">Sorted by weight — heaviest dimensions at top. Bars show score vs gap to maximum.</span>
+      </div>
+      <div class="section-body" style="padding:14px 16px">
+        ${chartDims.length === 0
+          ? '<p class="text-muted text-sm">No scored dimensions yet — enter scores below to populate the chart.</p>'
+          : `<div style="position:relative;height:${chartHeight}px"><canvas id="score-chart"></canvas></div>`}
+      </div>
+    </div>
+
     <div class="section">
-      <div class="section-hdr"><h3>Scoring Dimensions</h3><button class="btn btn-primary btn-sm" onclick="saveAllScores()">💾 Save Scores</button></div>
+      <div class="section-hdr">
+        <h3>Scoring Dimensions</h3>
+        <div style="display:flex;gap:8px;align-items:center">
+          <span class="text-xs text-muted">Toggle N/A to exclude irrelevant dimensions from the score</span>
+          <button class="btn btn-primary btn-sm" onclick="saveAllScores()">💾 Save Scores</button>
+        </div>
+      </div>
       <div class="section-body">`;
 
   pillarOrder.forEach(pillar => {
     const dims = state.weights.filter(w => w.pillar === pillar);
     html += `<div class="dim-group">
       <div class="dim-group-title">${pillarNames[pillar]}</div>
-      <div style="display:grid;grid-template-columns:20px 1fr;gap:0 8px;font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;padding:4px 0">
-        <span></span><span style="display:grid;grid-template-columns:1fr 56px 70px 1fr;gap:10px"><span>Dimension</span><span style="text-align:center">Weight</span><span style="text-align:center">Score 1–5</span><span>Notes</span></span>
+      <div style="display:grid;grid-template-columns:1fr 56px 70px 1fr 52px;gap:10px;font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;padding:4px 0;border-bottom:1px solid #f1f5f9;margin-bottom:2px">
+        <span>Dimension</span><span style="text-align:center">Weight</span><span style="text-align:center">Score 1–5</span><span>Notes</span><span style="text-align:center">N/A</span>
       </div>`;
     dims.forEach(w => {
       const existing = scoreMap[w.dimension_key];
+      const isExcluded = existing?.excluded === true;
       const effectiveWeight = w.custom_weight || w.default_weight;
-      html += `<div class="dim-row" style="grid-template-columns:1fr 56px 70px 1fr">
+      html += `<div class="dim-row${isExcluded ? ' excluded' : ''}" id="dimrow-${w.dimension_key}">
         <div>
           <div class="dim-name">${w.dimension_name}</div>
-          <div class="dim-anchor">5: ${w.score_5_anchor?.substring(0,60)}…</div>
-          <div class="dim-anchor">1: ${w.score_1_anchor?.substring(0,60)}…</div>
+          <div class="dim-anchor">▲ ${w.score_5_anchor?.substring(0,70)}…</div>
+          <div class="dim-anchor">▼ ${w.score_1_anchor?.substring(0,70)}…</div>
         </div>
         <div class="dim-wt">${effectiveWeight}×</div>
         <div>
-          <select class="score-sel" id="score-${w.dimension_key}">
+          <select class="score-sel" id="score-${w.dimension_key}" ${isExcluded ? 'disabled' : ''}>
             <option value="">—</option>
             <option value="1" ${existing?.score===1?'selected':''}>1</option>
             <option value="2" ${existing?.score===2?'selected':''}>2</option>
@@ -811,7 +841,10 @@ async function renderAssessmentTab() {
             <option value="5" ${existing?.score===5?'selected':''}>5</option>
           </select>
         </div>
-        <div><textarea class="dim-notes-input" id="snotes-${w.dimension_key}" placeholder="Notes…">${existing?.notes||''}</textarea></div>
+        <div><textarea class="dim-notes-input" id="snotes-${w.dimension_key}" placeholder="Notes…" ${isExcluded ? 'disabled' : ''}>${existing?.notes||''}</textarea></div>
+        <div style="text-align:center;padding-top:4px">
+          <button class="btn-na${isExcluded ? ' active' : ''}" id="na-${w.dimension_key}" onclick="toggleNA('${w.dimension_key}')" title="Mark as not applicable — excludes from score calculation">N/A</button>
+        </div>
       </div>`;
     });
     html += `</div>`;
@@ -819,6 +852,113 @@ async function renderAssessmentTab() {
 
   html += `</div></div>`;
   document.getElementById('tab-assessment').innerHTML = html;
+
+  // Render chart after DOM update
+  if (chartDims.length > 0) {
+    requestAnimationFrame(() => renderScoreChart(chartDims, scoreMap));
+  }
+}
+
+function renderScoreChart(dims, scoreMap) {
+  const ctx = document.getElementById('score-chart');
+  if (!ctx) return;
+  if (window._scoreChart) { window._scoreChart.destroy(); window._scoreChart = null; }
+
+  const labels = dims.map(w => {
+    const eff = w.custom_weight || w.default_weight;
+    return `${w.dimension_name} (${eff}×)`;
+  });
+  const scorePcts = dims.map(w => {
+    const s = scoreMap[w.dimension_key];
+    return s?.score ? Math.round((s.score / 5) * 100) : 0;
+  });
+  const gapPcts = dims.map(w => {
+    const s = scoreMap[w.dimension_key];
+    return s?.score ? Math.round(((5 - s.score) / 5) * 100) : 100;
+  });
+  const barColors = dims.map(w => {
+    const s = scoreMap[w.dimension_key];
+    if (!s?.score) return '#cbd5e1';
+    if (s.score >= 4) return '#16a34a';
+    if (s.score >= 3) return '#d97706';
+    return '#dc2626';
+  });
+
+  window._scoreChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Score',
+          data: scorePcts,
+          backgroundColor: barColors,
+          borderRadius: 3,
+          borderSkipped: false,
+        },
+        {
+          label: 'Gap to max',
+          data: gapPcts,
+          backgroundColor: '#f1f5f9',
+          borderRadius: 3,
+          borderSkipped: false,
+        }
+      ]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        x: {
+          stacked: true,
+          max: 100,
+          ticks: { callback: v => v + '%', font: { size: 11 }, color: '#94a3b8' },
+          grid: { color: '#f1f5f9' },
+          border: { display: false }
+        },
+        y: {
+          stacked: true,
+          ticks: { font: { size: 11 }, color: '#475569' },
+          grid: { display: false },
+          border: { display: false }
+        }
+      },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            title: items => dims[items[0].dataIndex]?.dimension_name,
+            label: item => {
+              if (item.datasetIndex === 1) return null;
+              const w = dims[item.dataIndex];
+              const s = scoreMap[w?.dimension_key];
+              const eff = w ? (w.custom_weight || w.default_weight) : 0;
+              return [
+                ` Score: ${s?.score ?? '—'} / 5`,
+                ` Weight: ${eff}×`,
+                ` Contribution: ${s?.score ? s.score * eff : 0} / ${5 * eff} pts`,
+                ` Gap to max: ${s?.score ? (5 - s.score) * eff : 5 * eff} pts`
+              ];
+            }
+          },
+          filter: item => item.datasetIndex === 0
+        }
+      }
+    }
+  });
+}
+
+function toggleNA(dimKey) {
+  const row = document.getElementById('dimrow-' + dimKey);
+  const btn = document.getElementById('na-' + dimKey);
+  const sel = document.getElementById('score-' + dimKey);
+  const notes = document.getElementById('snotes-' + dimKey);
+  const isNow = !btn.classList.contains('active');
+  btn.classList.toggle('active', isNow);
+  row.classList.toggle('excluded', isNow);
+  if (sel) sel.disabled = isNow;
+  if (notes) notes.disabled = isNow;
 }
 
 async function saveAllScores() {
@@ -826,13 +966,16 @@ async function saveAllScores() {
   state.weights.forEach(w => {
     const sel = document.getElementById('score-' + w.dimension_key);
     const notes = document.getElementById('snotes-' + w.dimension_key);
-    if (!sel) return;
-    const scoreVal = sel.value ? parseInt(sel.value) : null;
+    const naBtn = document.getElementById('na-' + w.dimension_key);
+    if (!sel && !naBtn) return;
+    const isExcluded = naBtn?.classList.contains('active') || false;
+    const scoreVal = (!isExcluded && sel?.value) ? parseInt(sel.value) : null;
     upserts.push({
       deal_id: state.currentDealId,
       dimension_key: w.dimension_key,
       score: scoreVal,
-      notes: notes?.value || null
+      notes: notes?.value || null,
+      excluded: isExcluded
     });
   });
   await sb.from('deal_scores').upsert(upserts, { onConflict: 'deal_id,dimension_key' });
@@ -842,7 +985,7 @@ async function saveAllScores() {
   await sb.from('deals').update({ overall_score: sc.pct }).eq('id', state.currentDealId);
   state.deal.overall_score = sc.pct;
   renderAssessmentTab();
-  showToast('Scores saved');
+  showToast('Scores saved ✓');
 }
 
 // ─── RISK & QUESTIONS TAB ────────────────────────────────────────────────────
